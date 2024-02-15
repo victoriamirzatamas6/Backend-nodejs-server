@@ -70,30 +70,31 @@ app.post('/login', async (req, res) => {
         const user = await User.findOne({ username });
         console.log('User found:', user);
 
-        if (user) {
-            console.log('Comparing passwords...');
-            // Comparați parola primită cu parola hashată din baza de date
-            const passwordMatch = await bcrypt.compare(password, user.password);
-            console.log('Password match:', passwordMatch);
-            
-
-            if (passwordMatch==0) {
-                console.log('User successfully authenticated:', user);
-                res.status(200).send('Successfully authenticated.');
-                
-            } else {
-                console.log('Invalid password.');
-                res.status(401).send('Invalid username or password.');
-            }
-        } else {
+        if (!user) {
             console.log('User not found.');
             res.status(401).send('Invalid username or password.');
+            return; // Ieșiți din funcție pentru a opri execuția ulterioară
         }
+
+        console.log('Comparing passwords...');
+        // Comparați parola primită cu parola hashată din baza de date
+        const passwordMatch = await bcrypt.compare(password, user.password);
+        console.log('Password match:', passwordMatch);
+        
+        if (!passwordMatch) {
+            console.log('User successfully authenticated:', user);
+            res.status(200).send('Successfully authenticated.');
+        } else {
+            console.log('Invalid password.');
+            res.status(401).send('Invalid username or password.');
+        }
+        
     } catch (error) {
         console.error('Error during authentication:', error);
         res.status(500).send('Error during authentication.');
     }
 });
+
 /*app.post('/login', async (req, res) => {
     try {
         const { username } = req.body;
