@@ -44,11 +44,12 @@ axios.post('http://localhost:3000/register', userData)
   });
   */
 
-const axios = require('axios');
+  const axios = require('axios');
 
 const userData = {
-  username: 'angajat',
-  password: 'continental1'
+  username: 'angajat_nou',
+  password: 'secure-password',
+  role: 'user' // Specificăm explicit că acesta este un utilizator obișnuit
 };
 
 axios.post('http://localhost:3000/register', userData)
