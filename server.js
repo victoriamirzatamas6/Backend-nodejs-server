@@ -1,4 +1,5 @@
 require('dotenv').config();
+const jwt = require('jsonwebtoken');
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
@@ -7,9 +8,14 @@ const cors = require('cors');
 
 // Importă authRoutes
 const authRoutes = require('./models/routes/authRoutes');
+const ChatHistory = require('./models/ChatHistory');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const jwtSecret = process.env.JWT_SECRET;
+
+const Feedback = require('./models/Feedback');
 
 
 
@@ -24,7 +30,31 @@ mongoose.connect(process.env.MONGODB_URI)
 // Folosește authRoutes pentru rutele de autentificare și înregistrare
 app.use(authRoutes);
 
-
+async function saveMessage(username, message, sender) {
+  try {
+    let chatHistory = await ChatHistory.findOne({ username: username });
+    if (chatHistory) {
+      // Dacă există deja un istoric, adaugă mesajul nou
+      chatHistory.messages.push({
+        text: message,
+        sender: sender
+      });
+    } else {
+      // Dacă nu există, creează un nou document pentru acest utilizator
+      chatHistory = new ChatHistory({
+        username: username,
+        messages: [{
+          text: message,
+          sender: sender
+        }]
+      });
+    }
+    await chatHistory.save();
+  } catch (error) {
+    console.error("Error saving message:", error);
+    throw error; // Aruncă eroarea mai departe pentru a fi gestionată de apelant
+  }
+}
 
 app.post('/login', async (req, res) => {
     try {
@@ -50,7 +80,9 @@ app.post('/login', async (req, res) => {
         if (!passwordMatch) {
             console.log('User successfully authenticated:', user);
 
-            
+            const token = jwt.sign({ username: user.username }, process.env.JWT_SECRET, { expiresIn: '24h' });
+;
+
             res.status(200).json({ message: 'Successfully authenticated.', role: user.role, username: user.username  });
             role: user.role // Trimitem rolul utilizatorului înapoi la client
             console.log('User role:', user.role);
@@ -67,6 +99,44 @@ app.post('/login', async (req, res) => {
     }
 });
 
+// Middleware pentru verificarea token-ului JWT
+const verifyJWT = (req, res, next) => {
+  //const token = req.headers['x-access-token'];
+  const token = req.headers.authorization?.split(' ')[1]; // Bearer TOKEN
+  if (!token) return res.status(401).send('A token is required for authentication');
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) return res.status(403).send('Invalid token');
+    req.username = decoded.username; // Asigură-te că acest câmp este corect populat
+    next();
+});
+
+  
+};
+// Adaugă feedback nou
+app.post('/feedback', async (req, res) => {
+  try {
+    const { text, username } = req.body;
+    const feedback = new Feedback({ text, username });
+    await feedback.save();
+    res.status(201).json(feedback);
+  } catch (error) {
+    console.error('Error saving feedback:', error);
+    res.status(500).send('Error saving feedback');
+  }
+});
+
+// Preluare toate feedback-urile
+app.get('/feedback', async (req, res) => {
+  try {
+    const feedbacks = await Feedback.find({});
+    res.json(feedbacks);
+  } catch (error) {
+    console.error('Error fetching feedbacks:', error);
+    res.status(500).send('Error fetching feedbacks');
+  }
+});
+
 // Ruta pentru a prelua toți utilizatorii non-admin
 app.get('/users', async (req, res) => {
     try {
@@ -77,6 +147,11 @@ app.get('/users', async (req, res) => {
       res.status(500).send('Server error');
     }
   });
+
+  // Un exemplu de ruta protejată
+app.get('/protected', verifyJWT, (req, res) => {
+  res.send('This is a protected route');
+});
   
   // Ruta pentru a adăuga un utilizator nou
   app.post('/users', async (req, res) => {
@@ -145,6 +220,49 @@ app.get('/user-details/:username', async (req, res) => {
         res.status(500).send('Server error');
     }
 });
+
+app.get('/verifyToken', verifyJWT, (req, res) => {
+  // Dacă middleware-ul `verifyJWT` nu returnează eroare, tokenul este valid
+  res.status(200).send('Token is valid');
+  console.log("Token valid");
+});
+
+// Endpoint pentru preluarea istoricului de chat
+app.get('/chatHistory', verifyJWT, async (req, res) => {
+  const { username } = req;
+
+  try {
+    const chatHistory = await ChatHistory.findOne({ username });
+    res.status(200).json(chatHistory ? chatHistory.messages : []);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Eroare la preluarea istoricului de chat." });
+  }
+});
+
+
+// Asigură-te că "username" este extras corect din token-ul JWT și folosit în query
+app.post('/saveMessage', verifyJWT, async (req, res) => {
+  const username = req.username; // presupunând că "verifyJWT" adaugă "username" în "req"
+  const { message, sender } = req.body;
+
+  try {
+    let chatHistory = await ChatHistory.findOne({ username: username });
+    if (!chatHistory) {
+      chatHistory = new ChatHistory({ username, messages: [] });
+    }
+    chatHistory.messages.push({ text: message, sender: sender });
+    await chatHistory.save();
+    res.status(200).json({ message: "Mesaj salvat cu succes." });
+  } catch (error) {
+    console.error("Eroare la salvarea mesajului:", error);
+    res.status(500).json({ message: "Eroare la salvarea mesajului." });
+  }
+});
+
+
+
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
